@@ -1,0 +1,39 @@
+{
+  "llm": {
+    "api_key": "sk-e4950db12ac54c8e892ebdb9097c09ee",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-flash",
+    "max_retries": 3,
+    "timeout": 30
+  },
+  "research": {
+    "thresholds": {
+      "sufficiency": 0.80,
+      "reliability": 0.75,
+      "consistency": 0.70,
+      "recency": 0.70,
+      "diversity": 0.60
+    },
+    "prefs": {
+      "source_preference": "variety",
+      "time_preference": "recent"
+    },
+    "max_loops_per_turn": 12,
+    "max_loops_per_step": 5,
+    "initial_budget_calls": 100,
+    "max_evidence": 200,
+    "rag_top_k": 5,
+    "web_search_results": 8
+  },
+  "monitor": {
+    "enabled": true,
+    "port": 5678,
+    "auto_open_browser": false
+  },
+  "system": {
+    "enable_colors": true,
+    "enable_icons": true,
+    "show_timestamp": true,
+    "show_module": true
+  }
+}
