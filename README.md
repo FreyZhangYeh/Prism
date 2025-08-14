@@ -7,10 +7,12 @@ Prism 是一个基于大语言模型的深度研究系统，通过多轮对话�
 ## 📺 演示效果
 
 ### 🔬 研究过程展示
-https://github.com/user-attachments/assets/demo.mp4
+
+[![研究过程展示](fig/demo.gif)]
 
 ### 🧠 记忆监控系统
-https://github.com/user-attachments/assets/memory.mp4
+
+[![记忆监控系统](fig/memory.gif)]
 
 ## 📖 简介
 
@@ -34,7 +36,7 @@ Prism 采用先进的 Agent 架构设计，能够像经验丰富的研究员一�
 2. **执行循环**：
    - **评估（Evaluate）**：评估当前研究状态的完整性
    - **决策（Decide）**：基于评估结果决定下一步行动
-   - **执行（Execute）**：通过 RAG 或 Web 搜索获取信息
+   - **执行（Execute）**：通过 RAG 或 Web 搜索获取信息，或通过冲突求解器澄清冲突观点。
    - **理解（Synthesize）**：将新信息整合为结构化观点
 3. **输出生成**：将所有观点整合为连贯的研究报告
 
@@ -69,13 +71,13 @@ pip install -r requirements.txt
 
 本系统使用**通义千问系列模型**。请先在 [阿里云百炼平台](https://bailian.console.aliyun.com/?spm=5176.29619931.J_AHgvE-XDhTWrtotIBlDQQ.13.225b521c3h0V4L&tab=home#/home) 获取 API Key.您也可以使用其他平台的 LLM API。
 
-编辑 `config.json` 文件，填入您的 API 密钥：
+编辑 `config.json` 文件，填入您的模型配置信息：
 ```json
 {
   "llm": {
-    "api_key": "sk-xxxxxxxxxxxxxxxx",  // 您的通义千问 API Key
-    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen-flash",  // 可选：qwen-turbo, qwen-plus, qwen-max
+    "api_key": "sk-xxxxxxxxxxxxxxxx",  
+    "base_url": "https://dashscope.aliyuncs.com/xxxxxxxxxxxxxxxx",
+    "model": "qwen-flash",  
     ...
   }
 }
