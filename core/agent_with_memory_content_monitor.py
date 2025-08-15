@@ -21,6 +21,7 @@ from core.acts.rag_query import RAGQueryGenerator
 from core.acts.web_search_query import WebSearchQueryGenerator
 from core.acts.resolve_conflict import ResolveConflict
 from core.acts.query_executor import QueryExecutor
+from core.models import Metrics, Issue, EvaluateSnapshot
 
 from llm.client import LLMClient
 
@@ -317,6 +318,14 @@ class DeepResearchAgentV2WithMemoryContentMonitor:
                         new_evidences, claims_active,
                         config.stance_enabled, verbose, monitor, source, query
                     )
+                
+                elif decision["action"] == "RESOLVE_CONFLICT":
+                    # Handle conflict resolution
+                    self._handle_conflict_resolution(
+                        session_id, turn_id, plan_id,
+                        step, evaluate_result, claims_active,
+                        config, verbose, monitor
+                    )
             
             # Generate output
             if verbose:
@@ -473,3 +482,150 @@ class DeepResearchAgentV2WithMemoryContentMonitor:
                     parts.append(f"- {claim['text']} (置信度: {claim['confidence']:.2f})")
         
         return "\n".join(parts)
+    
+    def _evaluate_to_dict(self, evaluate_snapshot) -> Dict[str, Any]:
+        """Convert EvaluateSnapshot to dict."""
+        return {
+            "passed": evaluate_snapshot.passed,
+            "metrics": {
+                "sufficiency": evaluate_snapshot.metrics.sufficiency,
+                "reliability": evaluate_snapshot.metrics.reliability,
+                "consistency": evaluate_snapshot.metrics.consistency,
+                "recency": evaluate_snapshot.metrics.recency,
+                "diversity": evaluate_snapshot.metrics.diversity
+            },
+            "issues": [
+                {
+                    "type": issue.type,
+                    "severity": issue.severity,
+                    "blocking": issue.blocking,
+                    "desc": issue.desc,
+                    "aspect": getattr(issue, 'aspect', None),
+                    "claims": getattr(issue, 'claims', None),
+                    "time_window": getattr(issue, 'time_window', None),
+                    "source_hint": getattr(issue, 'source_hint', None),
+                    "dimension": getattr(issue, 'dimension', None)
+                }
+                for issue in evaluate_snapshot.issues
+            ]
+        }
+    
+    def _dict_to_evaluate(self, eval_dict: Dict[str, Any]) -> EvaluateSnapshot:
+        """Convert dict back to EvaluateSnapshot."""
+        
+        metrics = Metrics(
+            sufficiency=eval_dict["metrics"]["sufficiency"],
+            reliability=eval_dict["metrics"]["reliability"],
+            consistency=eval_dict["metrics"]["consistency"],
+            recency=eval_dict["metrics"]["recency"],
+            diversity=eval_dict["metrics"]["diversity"]
+        )
+        
+        issues = []
+        for issue_dict in eval_dict.get("issues", []):
+            issue = Issue(
+                type=issue_dict["type"],
+                severity=issue_dict["severity"],
+                blocking=issue_dict["blocking"],
+                desc=issue_dict["desc"]
+            )
+            # Set optional fields if present
+            if issue_dict.get("aspect"):
+                issue.aspect = issue_dict["aspect"]
+            if issue_dict.get("claims"):
+                issue.claims = issue_dict["claims"]
+            if issue_dict.get("time_window"):
+                issue.time_window = issue_dict["time_window"]
+            if issue_dict.get("source_hint"):
+                issue.source_hint = issue_dict["source_hint"]
+            if issue_dict.get("dimension"):
+                issue.dimension = issue_dict["dimension"]
+            issues.append(issue)
+        
+        return EvaluateSnapshot(
+            passed=eval_dict["passed"],
+            metrics=metrics,
+            issues=issues,
+            unmet=[],
+            next_actions=[]
+        )
+    
+    def _handle_conflict_resolution(self, session_id: str, turn_id: str, plan_id: str,
+                                   step: PlanStep, evaluate_result: EvaluateSnapshot,
+                                   claims_active: List[Dict], config: SessionConfig,
+                                   verbose: bool, monitor: Optional[Any]):
+        """Handle conflict resolution with memory and monitor updates."""
+        if verbose:
+            logger.info("Conflict Resolution", "Attempting to resolve conflicting claims...")
+        if monitor:
+            monitor.add_action({
+                'action': 'RESOLVE_CONFLICT',
+                'status': 'in_progress',
+                'rationale': 'High-severity conflict detected.'
+            })
+
+        # Extract conflicts from issues
+        conflicts = [
+            ConflictInfo(claims=issue.claims, severity=issue.severity, desc=issue.desc)
+            for issue in evaluate_result.issues if issue.type == "conflict" and issue.claims
+        ]
+
+        if not conflicts:
+            if verbose:
+                logger.warning("Conflict Resolution", "Decision was to resolve conflict, but no conflict issues found.")
+            return
+
+        resolution_result = self.conflict_resolver.resolve(
+            step={"goal": step.goal, "way": step.way},
+            claims_active=claims_active,
+            conflicts=conflicts,
+            last_evaluate=self._evaluate_to_dict(evaluate_result)
+        )
+        
+        # 1. Process new evidence
+        new_evidence_items = []
+        if resolution_result.get("evidence_added"):
+            for ev_dict in resolution_result["evidence_added"]:
+                new_evidence_items.append(EvidenceItem(
+                    id=ev_dict["evidence_id"],
+                    source=Source(url=ev_dict["url"], domain=ev_dict["source"], type="internal" if ev_dict["provenance"] == "rag" else "web"),
+                    time=ev_dict["date"],
+                    text=ev_dict["snippet"]
+                ))
+            self.memory.add_evidences(session_id, turn_id, plan_id, new_evidence_items)
+            if monitor:
+                monitor.update_active_evidences(self.memory.get_evidences(session_id, turn_id))
+
+        # 2. Apply claim updates to memory
+        if resolution_result.get("updated_claims"):
+            self.memory.apply_claim_updates(session_id, turn_id, resolution_result["updated_claims"])
+            if monitor:
+                monitor.update_active_claims(self.memory.get_claims(session_id, turn_id))
+
+        # 3. Process post-evaluation and check for step completion
+        if resolution_result.get("post_evaluate"):
+            post_eval = self._dict_to_evaluate(resolution_result["post_evaluate"])
+            self.memory.set_evaluate(session_id, turn_id, plan_id, post_eval)
+            if monitor:
+                # Use the dict form for monitor to ensure serialization
+                monitor.add_evaluation(resolution_result["post_evaluate"])
+
+            # 4. Step convergence and advancement
+            is_resolved = post_eval.passed and not any(i.blocking and i.type == 'conflict' for i in post_eval.issues)
+            if is_resolved:
+                if verbose:
+                    logger.success("Conflict Resolution", f"Step {step.step_id} resolved and marked as FINISHED.")
+                self.memory.set_step_status(session_id, turn_id, step.step_id, "FINISHED")
+                if monitor:
+                    monitor.update_plan_steps(self.memory.get_plan_list(session_id, turn_id))
+
+        # Log and monitor completion
+        summary = resolution_result.get("resolution_summary", {})
+        summary_text = (f"Resolved {summary.get('groups_resolved', 0)} of "
+                        f"{summary.get('conflict_groups_total', 0)} conflicts")
+        if verbose:
+            logger.success("Conflict Resolution", summary_text)
+        if monitor:
+            monitor.add_action({
+                'action': 'RESOLVE_CONFLICT', 'status': 'completed', 'rationale': summary_text
+            })

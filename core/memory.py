@@ -197,6 +197,37 @@ class MemoryFacade:
         evidences = turn_data.get('evidences_active', [])
         return [self._evidence_to_dict(e) for e in evidences]
 
+    def apply_claim_updates(self, session_id: str, turn_id: str, updated_claims: List[Dict]):
+        """Apply claim updates from conflict resolution to memory."""
+        turn_data = self._turn_data.get(session_id, {}).get(turn_id)
+        if not turn_data:
+            return
+
+        active_claims = turn_data.get('claims_active', [])
+        claims_map = {c.id: c for c in active_claims}
+
+        for update in updated_claims:
+            claim_id = update.get("claim_id")
+            action = update.get("action")
+            
+            if not claim_id or claim_id not in claims_map:
+                continue
+            
+            claim_obj = claims_map[claim_id]
+            
+            if action == "upheld":
+                claim_obj.confidence = update["new_confidence"]
+            elif action == "revised":
+                claim_obj.text = update["new_text"]
+                claim_obj.confidence = update["new_confidence"]
+                if "evidence_ids" in update:
+                    claim_obj.support_ids = list(set(claim_obj.support_ids + update["evidence_ids"]))
+            elif action == "retracted":
+                claim_obj.confidence = 0.0  # Mark for removal
+
+        # Filter out retracted claims and update memory
+        turn_data['claims_active'] = [c for c in active_claims if c.confidence > 0]
+
     def get_working_set_for_synthesize(self, session_id: str, turn_id: str) -> Dict:
         """Get working set for synthesize operation."""
         turn_data = self._turn_data.get(session_id, {}).get(turn_id, {})

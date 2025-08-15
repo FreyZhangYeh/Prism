@@ -79,6 +79,10 @@ class Synthesize:
         evidences_json = json.dumps(evidences, ensure_ascii=False, indent=2)
         claims_json = json.dumps(previous_claims, ensure_ascii=False, indent=2)
         
+        # Pre-build stance-related strings to avoid complex f-string nesting
+        stance_json_example = ',"stance":"pro|neutral|con"' if stance_enabled else ''
+        stance_requirement = '- stance: pro(支持)/neutral(中立)/con(反对)，仅在观点类问题时使用' if stance_enabled else ''
+
         prompt = f"""问题：{user_query}
 
 证据(JSON)：
@@ -88,11 +92,11 @@ class Synthesize:
 {claims_json}
 
 要求：
-- 仅输出JSON：{{"claims":[{{ "id":"c1","text":"…","support_ids":["e1"],"aspects":["…"],"confidence":0.7{',\"stance\":\"pro|neutral|con\"' if stance_enabled else ''},"salience":0.6(可省)}}]}}
+- 仅输出JSON：{{"claims":[{{ "id":"c1","text":"…","support_ids":["e1"],"aspects":["…"],"confidence":0.7{stance_json_example},"salience":0.6(可省)}}]}}
 - text 必须被 support_ids 覆盖；不得额外发挥
 - confidence: 0-1之间，表示观点的可信度
 - salience: 0-1之间，表示观点的重要性（可选）
 - aspects: 观点涉及的方面/维度
-{f'- stance: pro(支持)/neutral(中立)/con(反对)，仅在观点类问题时使用' if stance_enabled else ''}"""
+{stance_requirement}"""
         
         return prompt
