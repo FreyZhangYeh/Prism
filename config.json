@@ -1,8 +1,8 @@
 {
   "llm": {
-    "api_key": "sk-e4950db12ac54c8e892ebdb9097c09ee",
-    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen-flash",
+    "api_key": "sk-********************",
+    "base_url": "https://dashscope.aliyuncs.com/***************",
+    "model": "qwen-*********",
     "max_retries": 3,
     "timeout": 30
   },
